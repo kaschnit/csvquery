@@ -8,10 +8,6 @@ import (
 
 var selectQueryParser = BuildParser(&SelectQuery{})
 
-func exprLeftmostTerm(expression *Expression) *Term {
-	return expression.Or[0].And[0].LHS.Summand.LHS.LHS
-}
-
 func TestSelectNoSelectFieldsFails(t *testing.T) {
 	result := &SelectQuery{}
 	err := selectQueryParser.ParseString("SELECT FROM sometable", result)
@@ -72,11 +68,41 @@ func TestSelectWhereBasicPasses(t *testing.T) {
 		assert.Equal(t, "sometable", result.FromClause.FromExpression.Target)
 
 		whereClause := result.FromClause.FromExpression.WhereClause
-		assert.Equal(t, "x", exprLeftmostTerm(whereClause.Expression).SymbolRef.Symbol)
+		assert.Equal(t, "x", whereClause.Expression.Or[0].And[0].LHS.Summand.LHS.LHS.SymbolRef.Symbol)
 
 		andExpr := whereClause.Expression.Or[0].And[0]
 		assert.Equal(t, "<", andExpr.Op)
 		assert.Equal(t, float64(3), *andExpr.RHS.Summand.LHS.LHS.ConstantValue.Number)
+	}
+}
+
+func TestSelectWhereOrBasicPasses(t *testing.T) {
+	result := &SelectQuery{}
+	err := selectQueryParser.ParseString("SELECT * FROM sometable WHERE x < \"a\" or y = z", result)
+	if assert.NoError(t, err) {
+		orExprs := result.FromClause.FromExpression.WhereClause.Expression.Or
+		assert.Len(t, orExprs, 2)
+		assert.Equal(t, "x", orExprs[0].And[0].LHS.Summand.LHS.LHS.SymbolRef.Symbol)
+		assert.Equal(t, "<", orExprs[0].And[0].Op)
+		assert.Equal(t, "a", *orExprs[0].And[0].RHS.Summand.LHS.LHS.ConstantValue.String)
+		assert.Equal(t, "y", orExprs[1].And[0].LHS.Summand.LHS.LHS.SymbolRef.Symbol)
+		assert.Equal(t, "=", orExprs[1].And[0].Op)
+		assert.Equal(t, "z", orExprs[1].And[0].RHS.Summand.LHS.LHS.SymbolRef.Symbol)
+	}
+}
+
+func TestSelectWhereAndBasicPasses(t *testing.T) {
+	result := &SelectQuery{}
+	err := selectQueryParser.ParseString("SELECT * FROM sometable WHERE x < \"a\" AND true = z", result)
+	if assert.NoError(t, err) {
+		andExprs := result.FromClause.FromExpression.WhereClause.Expression.Or[0].And
+		assert.Len(t, andExprs, 2)
+		assert.Equal(t, "x", andExprs[0].LHS.Summand.LHS.LHS.SymbolRef.Symbol)
+		assert.Equal(t, "<", andExprs[0].Op)
+		assert.Equal(t, "a", *andExprs[0].RHS.Summand.LHS.LHS.ConstantValue.String)
+		assert.True(t, bool(*andExprs[1].LHS.Summand.LHS.LHS.ConstantValue.Boolean))
+		assert.Equal(t, "=", andExprs[1].Op)
+		assert.Equal(t, "z", andExprs[1].RHS.Summand.LHS.LHS.SymbolRef.Symbol)
 	}
 }
 
@@ -87,8 +113,10 @@ func TestSelectFieldsWithAliasQueryBasicPasses(t *testing.T) {
 		selectExpr := result.SelectClause.Expression
 		assert.False(t, selectExpr.All)
 		assert.Len(t, selectExpr.Expressions, 1)
-		assert.Equal(t, "A", exprLeftmostTerm(selectExpr.Expressions[0].Expression).SymbolRef.Symbol)
-		assert.Equal(t, "B", selectExpr.Expressions[0].As)
+
+		subExpr := selectExpr.Expressions[0]
+		assert.Equal(t, "A", subExpr.Expression.Or[0].And[0].LHS.Summand.LHS.LHS.SymbolRef.Symbol)
+		assert.Equal(t, "B", subExpr.As)
 	}
 
 	result = &SelectQuery{}
@@ -97,13 +125,17 @@ func TestSelectFieldsWithAliasQueryBasicPasses(t *testing.T) {
 		selectExpr := result.SelectClause.Expression
 		assert.False(t, selectExpr.All)
 		assert.Len(t, selectExpr.Expressions, 3)
-		assert.Equal(t, "X", exprLeftmostTerm(selectExpr.Expressions[0].Expression).SymbolRef.Symbol)
+
+		subExpr := selectExpr.Expressions[0].Expression.Or[0].And[0].LHS.Summand.LHS.LHS
+		assert.Equal(t, "X", subExpr.SymbolRef.Symbol)
 		assert.Equal(t, "Y", selectExpr.Expressions[0].As)
 
-		assert.Equal(t, "noAlia", exprLeftmostTerm(selectExpr.Expressions[1].Expression).SymbolRef.Symbol)
+		subExpr = selectExpr.Expressions[1].Expression.Or[0].And[0].LHS.Summand.LHS.LHS
+		assert.Equal(t, "noAlia", subExpr.SymbolRef.Symbol)
 		assert.Equal(t, "", selectExpr.Expressions[1].As)
 
-		assert.Equal(t, "longername", exprLeftmostTerm(selectExpr.Expressions[2].Expression).SymbolRef.Symbol)
+		subExpr = selectExpr.Expressions[2].Expression.Or[0].And[0].LHS.Summand.LHS.LHS
+		assert.Equal(t, "longername", subExpr.SymbolRef.Symbol)
 		assert.Equal(t, "short", selectExpr.Expressions[2].As)
 	}
 }
@@ -116,7 +148,9 @@ func TestSelectFieldsQueryBasicPasses(t *testing.T) {
 		assert.False(t, selectExpr.All)
 
 		assert.Len(t, selectExpr.Expressions, 1)
-		assert.Equal(t, "abc", exprLeftmostTerm(selectExpr.Expressions[0].Expression).SymbolRef.Symbol)
+
+		subExpr := selectExpr.Expressions[0].Expression.Or[0].And[0].LHS.Summand.LHS.LHS
+		assert.Equal(t, "abc", subExpr.SymbolRef.Symbol)
 		assert.Equal(t, "", selectExpr.Expressions[0].As)
 
 		assert.Equal(t, "target1", result.FromClause.FromExpression.Target)
@@ -130,9 +164,15 @@ func TestSelectFieldsQueryBasicPasses(t *testing.T) {
 		assert.False(t, selectExpr.All)
 
 		assert.Len(t, selectExpr.Expressions, 3)
-		assert.Equal(t, "abc", exprLeftmostTerm(selectExpr.Expressions[0].Expression).SymbolRef.Symbol)
-		assert.Equal(t, "def1", exprLeftmostTerm(selectExpr.Expressions[1].Expression).SymbolRef.Symbol)
-		assert.Equal(t, "g__hi", exprLeftmostTerm(selectExpr.Expressions[2].Expression).SymbolRef.Symbol)
+
+		subExpr := selectExpr.Expressions[0].Expression.Or[0].And[0].LHS.Summand.LHS.LHS
+		assert.Equal(t, "abc", subExpr.SymbolRef.Symbol)
+
+		subExpr = selectExpr.Expressions[1].Expression.Or[0].And[0].LHS.Summand.LHS.LHS
+		assert.Equal(t, "def1", subExpr.SymbolRef.Symbol)
+
+		subExpr = selectExpr.Expressions[2].Expression.Or[0].And[0].LHS.Summand.LHS.LHS
+		assert.Equal(t, "g__hi", subExpr.SymbolRef.Symbol)
 
 		assert.Equal(t, "abcd_2", result.FromClause.FromExpression.Target)
 		assert.Nil(t, result.FromClause.FromExpression.WhereClause)
