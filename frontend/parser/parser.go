@@ -1,15 +1,26 @@
 package parser
 
 import (
+	"strings"
+
 	"github.com/alecthomas/participle"
+	"github.com/kaschnit/csvquery/frontend/lexer"
 )
 
+type Boolean bool
+
+func (b *Boolean) Capture(values []string) error {
+	*b = strings.ToUpper(values[0]) == "TRUE"
+	return nil
+}
+
 type SelectQuery struct {
-	SelectClause *SelectClause `SELECT @@`
+	SelectClause *SelectClause `@@`
+	FromClause   *FromClause   `@@`
 }
 
 type SelectClause struct {
-	Expression *SelectExpression
+	Expression *SelectExpression `"SELECT" @@`
 }
 
 type SelectExpression struct {
@@ -23,10 +34,16 @@ type AliasedExpression struct {
 }
 
 type FromClause struct {
-	FromExpression *FromExpression `FROM @@`
+	FromExpression *FromExpression `"FROM" @@`
 }
 
 type FromExpression struct {
+	Target      string       `@Ident`
+	WhereClause *WhereClause `( @@ )?`
+}
+
+type WhereClause struct {
+	Expression *Expression `"WHERE" @@`
 }
 
 type Expression struct {
@@ -34,7 +51,7 @@ type Expression struct {
 }
 
 type OrCondition struct {
-	And *[]CompareConditon `@@ ( "AND" @@ )*`
+	And []*CompareConditon `@@ ( "AND" @@ )*`
 }
 
 type CompareConditon struct {
@@ -72,12 +89,14 @@ type SymbolRef struct {
 type ConstantValue struct {
 	Number  *float64 `@Number`
 	String  *string  `| @String`
-	Boolean *bool    `| @("TRUE" | "FALSE")`
+	Boolean *Boolean `| @("TRUE" | "FALSE")`
 }
 
-var queryParser = participle.MustBuild(
-	&SelectQuery{},
-	participle.Lexer(),
-	participle.Unquote("String"),
-	participle.CaseInsensitive("Keyword"),
-)
+func BuildParser(grammar interface{}) *participle.Parser {
+	return participle.MustBuild(
+		grammar,
+		participle.Lexer(lexer.QueryLexer),
+		participle.Unquote("String"),
+		participle.CaseInsensitive("Keyword"),
+	)
+}
