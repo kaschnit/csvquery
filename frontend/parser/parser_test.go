@@ -106,6 +106,32 @@ func TestSelectWhereAndBasicPasses(t *testing.T) {
 	}
 }
 
+func TestSelectComparisonParenthesisBasic(t *testing.T) {
+	result := &SelectQuery{}
+	// normally OR takes precedence over AND, this should change that
+	query := "SELECT * FROM sometable WHERE (x >= \"something\" And true <= false) OR 30 > \"590\""
+	err := selectQueryParser.ParseString(query, result)
+	if assert.NoError(t, err) {
+		orExprs := result.FromClause.FromExpression.WhereClause.Expression.Or
+		assert.Len(t, orExprs, 2)
+
+		andExprs := orExprs[0].And[0].LHS.Summand.LHS.LHS.SubExpression.Or[0].And
+		assert.Len(t, andExprs, 2)
+
+		assert.Equal(t, "x", andExprs[0].LHS.Summand.LHS.LHS.SymbolRef.Symbol)
+		assert.Equal(t, ">=", andExprs[0].Op)
+		assert.Equal(t, "something", *andExprs[0].RHS.Summand.LHS.LHS.ConstantValue.String)
+		assert.True(t, bool(*andExprs[1].LHS.Summand.LHS.LHS.ConstantValue.Boolean))
+		assert.Equal(t, "<=", andExprs[1].Op)
+		assert.False(t, bool(*andExprs[1].RHS.Summand.LHS.LHS.ConstantValue.Boolean))
+
+		rhsExpr := orExprs[1].And[0]
+		assert.Equal(t, float64(30), *rhsExpr.LHS.Summand.LHS.LHS.ConstantValue.Number)
+		assert.Equal(t, ">", rhsExpr.Op)
+		assert.Equal(t, "590", *rhsExpr.RHS.Summand.LHS.LHS.ConstantValue.String)
+	}
+}
+
 func TestSelectFieldsWithAliasQueryBasicPasses(t *testing.T) {
 	result := &SelectQuery{}
 	err := selectQueryParser.ParseString("SELECT A as B FROM target1", result)

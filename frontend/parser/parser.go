@@ -79,6 +79,7 @@ type Factor struct {
 type Term struct {
 	ConstantValue *ConstantValue `@@`
 	SymbolRef     *SymbolRef     `| @@`
+	SubExpression *Expression    `| "(" @@ ")"`
 }
 
 type SymbolRef struct {
