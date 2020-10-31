@@ -55,9 +55,9 @@ type OrCondition struct {
 }
 
 type CompareConditon struct {
-	LHS          *Operand `@@`
-	ConditionRHS string   `( @( "<>" | "<=" | ">=" | "=" | "<" | ">" | "!=" )`
-	RHS          *Operand `@@ )?`
+	LHS *Operand `@@`
+	Op  string   `( @( "<>" | "<=" | ">=" | "=" | "<" | ">" | "!=" )`
+	RHS *Operand `@@ )?`
 }
 
 type Operand struct {
