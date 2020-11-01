@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/participle"
-	"github.com/kaschnit/csvquery/frontend/lexer"
+	"github.com/kaschnit/csvquery/lexer"
 )
 
 type Boolean bool
